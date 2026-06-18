@@ -19,7 +19,7 @@ t.start()
 
 # --- BOT SOZLAMALARI ---
 BOT_TOKEN = "8512233110:AAEbVt0kZulqNgCGNzLl_HnIzUwtNLWLCGs"
-bot = telebot.TeleBot(8512233110:AAEbVt0kZulqNgCGNzLl_HnIzUwtNLWLCGs)
+bot = telebot.TeleBot("8512233110:AAEbVt0kZulqNgCGNzLl_HnIzUwtNLWLCGs")
 ADMIN_ID = 8263438510
 
 # --- BAZA BILAN ISHLASH ---
