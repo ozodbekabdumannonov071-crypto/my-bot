@@ -15,5 +15,5 @@ t = Thread(target=run)
 t.start()
 
 # --- Bu yerdan pastga o'zingizning bot kodingizni yozing ---
-bot = telebot.TeleBot("SIZNING_TOKENINGIZ")
+bot = telebot.TeleBot("8512233110:AAEbVt0kZulqNgCGNzLl_HnIzUwtNLWLCGs")
 # ... va qolgan qismi ...
