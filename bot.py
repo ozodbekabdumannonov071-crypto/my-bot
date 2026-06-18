@@ -1,9 +1,9 @@
 from flask import Flask
 from threading import Thread
 import telebot
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup
 import json
 import os
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup
 
 # --- FLASK SERVERI ---
 app = Flask('')
@@ -12,49 +12,101 @@ def home(): return "Bot is running"
 def run(): app.run(host='0.0.0.0', port=8080)
 Thread(target=run).start()
 
-# --- SOZLAMALAR ---
+# --- BOT SOZLAMALARI ---
 BOT_TOKEN = "8512233110:AAEbVt0kZulqNgCGNzLl_HnIzUwtNLWLCGs"
-CHANNEL_ID = "@A_ToolsX" # Kanal manzilingiz
 ADMIN_ID = 8263438510
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# --- FUNKSIYALAR ---
-def check_sub(user_id):
-    try:
-        status = bot.get_chat_member(CHANNEL_ID, user_id).status
-        return status in ['member', 'administrator', 'creator']
-    except: return False
+# --- BAZA BILAN ISHLASH ---
+def load_json(file):
+    if not os.path.exists(file): return {}
+    with open(file, "r") as f:
+        try: return json.load(f)
+        except: return {}
 
-def main_menu():
-    markup = ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.add("📱 Raqam sotib olish", "💰 Balans")
-    markup.add("⚙️ Admin Panel")
-    return markup
+def save_json(file, data):
+    with open(file, "w") as f: json.dump(data, f, indent=4)
 
-# --- BUYRUQLAR ---
+# --- BOT MENYULARI ---
 @bot.message_handler(commands=['start'])
 def start(message):
-    if not check_sub(message.chat.id):
-        markup = InlineKeyboardMarkup()
-        markup.add(InlineKeyboardButton("✅ Obuna bo'lish", url=f"https://t.me/{CHANNEL_ID[1:]}"))
-        bot.send_message(message.chat.id, "Botdan foydalanish uchun kanalga obuna bo'ling:", reply_markup=markup)
-        return
+    db = load_json("users_db.json")
+    uid = str(message.chat.id)
+    if uid not in db:
+        db[uid] = 0
+        save_json("users_db.json", db)
     
-    bot.send_message(message.chat.id, "Axic Virtiumga xush kelibsiz!", reply_markup=main_menu())
+    markup = ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.add("📱 Raqam sotib olish", "💰 Balans")
+    if message.chat.id == ADMIN_ID: markup.add("⚙️ Admin Panel")
+    bot.send_message(message.chat.id, "Axic Virtiumga xush kelibsiz!", reply_markup=markup)
 
 @bot.message_handler(func=lambda m: m.text == "💰 Balans")
-def balans(message):
-    bot.send_message(message.chat.id, "Sizning balansingiz: 0 so'm")
+def show_balance(message):
+    db = load_json("users_db.json")
+    balans = db.get(str(message.chat.id), 0)
+    markup = InlineKeyboardMarkup()
+    markup.add(InlineKeyboardButton("💳 Pul yechish", callback_data="withdraw"))
+    bot.send_message(message.chat.id, f"Sizning balansingiz: {balans} so'm", reply_markup=markup)
 
 @bot.message_handler(func=lambda m: m.text == "📱 Raqam sotib olish")
-def sotib_olish(message):
-    bot.send_message(message.chat.id, "Raqamlar menyusi ochildi...")
+def shop(message):
+    prices = load_json("prices.json")
+    if not prices:
+        bot.send_message(message.chat.id, "Hozircha raqamlar mavjud emas.")
+        return
+    text = "Raqamlar narxlari:\n\n"
+    for davlat, narx in prices.items():
+        text += f"{davlat}: {narx} so'm\n"
+    bot.send_message(message.chat.id, text)
 
+# --- ADMIN PANEL ---
 @bot.message_handler(func=lambda m: m.text == "⚙️ Admin Panel")
-def admin_panel(message):
+def admin(message):
     if message.chat.id == ADMIN_ID:
-        bot.send_message(message.chat.id, "Admin panel: /add [ID] [Summa] yoki /setprice [Davlat] [Narx]")
-    else:
-        bot.send_message(message.chat.id, "Siz admin emassiz!")
+        bot.send_message(message.chat.id, "Admin buyruqlari:\n/add [ID] [Summa]\n/setprice [Davlat] [Narx]")
 
+@bot.message_handler(commands=['add'])
+def add_balance(message):
+    if message.chat.id != ADMIN_ID: return
+    try:
+        _, user_id, summa = message.text.split()
+        db = load_json("users_db.json")
+        db[user_id] = db.get(user_id, 0) + int(summa)
+        save_json("users_db.json", db)
+        bot.send_message(user_id, f"✅ Balansingiz {summa} so'mga to'ldirildi!")
+        bot.reply_to(message, "✅ Balans muvaffaqiyatli qo'shildi.")
+    except: bot.reply_to(message, "❌ Format: /add [ID] [Summa]")
+
+@bot.message_handler(commands=['setprice'])
+def set_price(message):
+    if message.chat.id != ADMIN_ID: return
+    try:
+        _, davlat, narx = message.text.split()
+        prices = load_json("prices.json")
+        prices[davlat] = int(narx)
+        save_json("prices.json", prices)
+        bot.reply_to(message, f"✅ {davlat} narxi {narx} so'mga o'zgartirildi!")
+    except: bot.reply_to(message, "❌ Format: /setprice [Davlat] [Narx]")
+
+@bot.callback_query_handler(func=lambda call: call.data == "withdraw")
+def withdraw_req(call):
+    bot.send_message(call.message.chat.id, "💳 Karta raqamingizni yuboring:")
+    bot.register_next_step_handler(call.message, send_admin_request)
+
+def send_admin_request(message):
+    card = message.text
+    bot.send_message(ADMIN_ID, f"⚠️ To'lov so'rovi:\nUser ID: {message.chat.id}\nKarta: {card}", 
+                     reply_markup=InlineKeyboardMarkup().add(
+                         InlineKeyboardButton("✅ To'landi", callback_data=f"pay_{message.chat.id}")))
+    bot.reply_to(message, "✅ So'rovingiz adminga yuborildi.")
+    @bot.callback_query_handler(func=lambda call: call.data.startswith("pay_"))
+def admin_pay(call):
+    user_id = call.data.split("_")[1]
+    # Foydalanuvchiga xabar yuborish
+    bot.send_message(user_id, "🎉 Pul kartangizga o'tkazildi!")
+    # Adminga to'langanini bildirish uchun tugmani yangilash
+    bot.edit_message_text("✅ To'landi deb belgilandi.", call.message.chat.id, call.message.message_id)
+
+# KODNING ENG OXIRIGA SHUNI QO'SHING:
 bot.infinity_polling()
